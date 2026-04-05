@@ -6,8 +6,10 @@ import lombok.AllArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.mongodb.core.mapping.Document;
-
+ 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 
 @Data
 @NoArgsConstructor
@@ -34,4 +36,10 @@ public class AuditLog {
 
     @CreatedDate
     private LocalDateTime createdAt;
+
+    public String getCreatedAtIST() {
+        if (createdAt == null) return null;
+        return createdAt.atZone(ZoneId.of("Asia/Kolkata"))
+            .format(DateTimeFormatter.ofPattern("dd MMM yyyy, hh:mm a"));
+    }
 }

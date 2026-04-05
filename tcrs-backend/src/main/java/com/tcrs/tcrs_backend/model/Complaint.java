@@ -7,7 +7,9 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.mongodb.core.mapping.Document;
+ 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 @Data
 @NoArgsConstructor
@@ -55,4 +57,11 @@ public class Complaint {
 
     @LastModifiedDate
     private LocalDateTime updatedAt;
+
+    // Helper: returns IST formatted string for frontend
+    public String getCreatedAtIST() {
+        if (createdAt == null) return null;
+        return createdAt.atZone(ZoneId.of("Asia/Kolkata"))
+            .format(java.time.format.DateTimeFormatter.ofPattern("dd MMM yyyy, hh:mm a"));
+    }    
 }

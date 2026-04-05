@@ -10,6 +10,8 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.index.Indexed;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 
 @Data
 @NoArgsConstructor
@@ -37,4 +39,10 @@ public class User {
 
     @CreatedDate
     private LocalDateTime createdAt;
+
+    public String getCreatedAtIST() {
+        if (createdAt == null) return null;
+        return createdAt.atZone(ZoneId.of("Asia/Kolkata"))
+            .format(DateTimeFormatter.ofPattern("dd MMM yyyy, hh:mm a"));
+    }
 }
