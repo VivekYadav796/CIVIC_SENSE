@@ -129,9 +129,9 @@ export default function LoginPage() {
         <div>
           <div onClick={() => router.push('/home')} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginBottom: 56 }}>
             <div style={{ width: 40, height: 40, borderRadius: 10, background: 'linear-gradient(135deg,#00d4ff,#00e5a0)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <span style={{ color: '#07090f', fontWeight: 800, fontSize: 18 }}>T</span>
+              <span style={{ color: '#07090f', fontWeight: 800, fontSize: 18 }}>CS</span>
             </div>
-            <span style={{ color: '#e8f0fe', fontWeight: 800, fontSize: 18 }}>TCRS</span>
+            <span style={{ color: '#e8f0fe', fontWeight: 800, fontSize: 18 }}>CIVIC SENSE</span>
           </div>
 
           <h1 style={{
