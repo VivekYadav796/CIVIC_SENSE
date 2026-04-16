@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { isLoggedIn } from '@/lib/auth';
 
@@ -102,10 +102,11 @@ const STATS = [
 
 export default function LandingPage() {
   const router = useRouter();
-  const [scrolled, setScrolled]     = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const [activeStep, setActiveStep] = useState(0);
   const [activeRole, setActiveRole] = useState(0);
-  const [mobileNav, setMobileNav]   = useState(false);
+  const [mobileNav, setMobileNav] = useState(false);
+  const observerRef = useRef<IntersectionObserver | null>(null);
 
   useEffect(() => {
     if (isLoggedIn()) { router.replace('/dashboard'); return; }
@@ -116,25 +117,83 @@ export default function LandingPage() {
     const stepTimer = setInterval(() => setActiveStep(s => (s + 1) % STEPS.length), 3200);
     const roleTimer = setInterval(() => setActiveRole(r => (r + 1) % ROLES.length), 2800);
 
+    // FIX: Robust scroll-reveal with retry logic for Next.js hydration
+    const setupObserver = () => {
+      observerRef.current = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('in-view');
+            // Once visible, stop observing to prevent re-hiding
+            observerRef.current?.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.05, rootMargin: '0px 0px -20px 0px' });
+
+      const els = document.querySelectorAll('.reveal');
+      els.forEach(el => {
+        // FIX: If already in viewport on load (e.g. stats bar), show immediately
+        const rect = el.getBoundingClientRect();
+        if (rect.top < window.innerHeight && rect.bottom > 0) {
+          el.classList.add('in-view');
+        } else {
+          observerRef.current?.observe(el);
+        }
+      });
+    };
+
+    // Try immediately, then retry after hydration delay
+    setupObserver();
+    const timer = setTimeout(setupObserver, 300);
+
     return () => {
       window.removeEventListener('scroll', onScroll);
       clearInterval(stepTimer);
       clearInterval(roleTimer);
+      observerRef.current?.disconnect();
+      clearTimeout(timer);
     };
   }, []);
 
+  // FIX: glow-card mouse/touch tracking — works on both desktop and mobile
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+    const card = e.currentTarget;
+    const rect = card.getBoundingClientRect();
+    let x, y;
+
+    if ('touches' in e) {
+      x = e.touches[0].clientX - rect.left;
+      y = e.touches[0].clientY - rect.top;
+    } else {
+      x = e.clientX - rect.left;
+      y = e.clientY - rect.top;
+    }
+
+    card.style.setProperty('--mouse-x', `${x}px`);
+    card.style.setProperty('--mouse-y', `${y}px`);
+    // FIX: Force glow visible on touch devices (no :hover state on mobile)
+    card.style.setProperty('--glow-opacity', '1');
+  };
+
+  // FIX: Reset glow on touch end for mobile
+  const handleTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    setTimeout(() => {
+      e.currentTarget.style.setProperty('--glow-opacity', '0');
+    }, 600);
+  };
+
+  const handleBtnClick = (href: string) => {
+    setTimeout(() => router.push(href), 120);
+  };
+
   const PrimaryBtn = ({ label, href }: { label: string; href: string }) => (
     <button
-      onClick={() => router.push(href)}
+      onClick={() => handleBtnClick(href)}
+      className="btn-click btn-primary"
       style={{
-        background: 'linear-gradient(135deg,#00d4ff,#0099cc)',
         color: '#07090f', border: 'none', borderRadius: 12,
         padding: '13px 28px', fontSize: 15, fontWeight: 700,
-        cursor: 'pointer', transition: 'opacity 0.2s, transform 0.1s',
-        whiteSpace: 'nowrap', fontFamily: "'Outfit',sans-serif",
+        cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: "'Outfit',sans-serif",
       }}
-      onMouseEnter={e => { e.currentTarget.style.opacity = '0.9'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
-      onMouseLeave={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(0)'; }}
     >
       {label}
     </button>
@@ -142,16 +201,13 @@ export default function LandingPage() {
 
   const OutlineBtn = ({ label, href }: { label: string; href: string }) => (
     <button
-      onClick={() => router.push(href)}
+      onClick={() => handleBtnClick(href)}
+      className="btn-click btn-outline"
       style={{
-        background: 'transparent', color: '#e8f0fe',
-        border: '1.5px solid #243044', borderRadius: 12,
+        color: '#e8f0fe', borderRadius: 12,
         padding: '13px 28px', fontSize: 15, fontWeight: 600,
-        cursor: 'pointer', transition: 'border-color 0.2s',
-        whiteSpace: 'nowrap', fontFamily: "'Outfit',sans-serif",
+        cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: "'Outfit',sans-serif",
       }}
-      onMouseEnter={e => (e.currentTarget.style.borderColor = '#00d4ff')}
-      onMouseLeave={e => (e.currentTarget.style.borderColor = '#243044')}
     >
       {label}
     </button>
@@ -164,19 +220,131 @@ export default function LandingPage() {
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         html { scroll-behavior: smooth; }
         body { font-family: 'Outfit', sans-serif; }
-        @keyframes fadeUp   { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes pulse    { 0%,100%{opacity:1} 50%{opacity:.4} }
-        @keyframes floatY   { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
-        @keyframes spin     { to{transform:rotate(360deg)} }
-        .anim-fade  { animation: fadeUp 0.6s ease both; }
-        .anim-fade1 { animation: fadeUp 0.6s 0.1s ease both; }
-        .anim-fade2 { animation: fadeUp 0.6s 0.2s ease both; }
-        .anim-fade3 { animation: fadeUp 0.6s 0.3s ease both; }
+
+        /* ── Core keyframes ── */
+        @keyframes fadeUp    { from{opacity:0;transform:translateY(24px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes pulse     { 0%,100%{opacity:1} 50%{opacity:.4} }
+        @keyframes floatY    { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+        @keyframes spin      { to{transform:rotate(360deg)} }
+
+        /* FIX: Scroll pointer / mouse scroll indicator animation */
+        @keyframes scrollBounce {
+          0%,100% { transform: translateY(0); opacity: 1; }
+          50%      { transform: translateY(8px); opacity: 0.4; }
+        }
+        @keyframes scrollDot {
+          0%   { transform: translateY(0); opacity: 1; }
+          100% { transform: translateY(10px); opacity: 0; }
+        }
+        @keyframes arrowFade {
+          0%,100% { opacity: 0.2; transform: translateY(0); }
+          50%      { opacity: 1;   transform: translateY(5px); }
+        }
+
+        /* ── Entrance animations ── */
+        .anim-fade  { animation: fadeUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
+        .anim-fade1 { animation: fadeUp 0.7s 0.1s cubic-bezier(0.16, 1, 0.3, 1) both; }
+        .anim-fade2 { animation: fadeUp 0.7s 0.2s cubic-bezier(0.16, 1, 0.3, 1) both; }
+        .anim-fade3 { animation: fadeUp 0.7s 0.3s cubic-bezier(0.16, 1, 0.3, 1) both; }
         .hero-float { animation: floatY 4s ease-in-out infinite; }
+
+        /* ── FIX: Scroll-reveal — use visibility trick so layout isn't broken ── */
+        .reveal {
+          opacity: 0;
+          transform: translateY(30px) scale(0.98);
+          transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1),
+                      transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+          will-change: transform, opacity;
+        }
+        .reveal.in-view {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+
+        /* ── Buttons ── */
+        .btn-primary { background: linear-gradient(135deg,#00d4ff,#0099cc); box-shadow: 0 4px 15px rgba(0,212,255,0.2); }
+        .btn-outline  { background: transparent; border: 1.5px solid #243044; }
+        .btn-click    { transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); position: relative; overflow: hidden; }
+        .btn-click:hover  { transform: translateY(-2px); opacity: 0.95; }
+        .btn-click:active { transform: scale(0.94) !important; transition: transform 0.1s; }
+
+        /* ── FIX: Glow card — works on both hover (desktop) and touch (mobile) ── */
+        .glow-card {
+          position: relative;
+          background: #0d1117;
+          border: 1px solid #1e2a3a;
+          border-radius: 16px;
+          overflow: hidden;
+          transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+          will-change: transform, border-color;
+        }
+        .glow-card::before {
+          content: "";
+          position: absolute; inset: 0;
+          background: radial-gradient(400px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(0,212,255,0.06), transparent 40%);
+          opacity: var(--glow-opacity, 0);
+          transition: opacity 0.5s;
+          pointer-events: none;
+        }
+        /* desktop hover */
+        .glow-card:hover::before { opacity: 1; }
+        .glow-card:hover { transform: translateY(-5px); border-color: rgba(0,212,255,0.3); box-shadow: 0 10px 40px -10px rgba(0,0,0,0.5); }
+        .glow-card:active { transform: scale(0.98); }
+
+        /* ── FIX: Scroll indicator widget ── */
+        .scroll-indicator {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 6px;
+          cursor: pointer;
+          user-select: none;
+          -webkit-tap-highlight-color: transparent;
+        }
+        .scroll-mouse {
+          width: 24px; height: 38px;
+          border: 2px solid rgba(0,212,255,0.5);
+          border-radius: 12px;
+          position: relative;
+          display: flex;
+          justify-content: center;
+          padding-top: 6px;
+          animation: scrollBounce 2.2s ease-in-out infinite;
+        }
+        .scroll-mouse-dot {
+          width: 4px; height: 7px;
+          background: #00d4ff;
+          border-radius: 2px;
+          animation: scrollDot 1.4s ease-in-out infinite;
+        }
+        .scroll-arrows {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 2px;
+        }
+        .scroll-arrow {
+          width: 10px; height: 10px;
+          border-right: 2px solid rgba(0,212,255,0.6);
+          border-bottom: 2px solid rgba(0,212,255,0.6);
+          transform: rotate(45deg);
+        }
+        .scroll-arrow:nth-child(1) { animation: arrowFade 1.4s 0.0s ease-in-out infinite; }
+        .scroll-arrow:nth-child(2) { animation: arrowFade 1.4s 0.2s ease-in-out infinite; }
+        .scroll-arrow:nth-child(3) { animation: arrowFade 1.4s 0.4s ease-in-out infinite; }
+
         a { text-decoration: none; color: inherit; }
+
+        /* ── Responsive ── */
         @media (max-width: 640px) {
-          .hide-sm { display: none !important; }
-          .stack-sm { flex-direction: column !important; }
+          .hide-sm      { display: none !important; }
+          .stack-sm     { flex-direction: column !important; }
+          /* FIX: show hamburger only on mobile */
+          .hide-desktop { display: flex !important; }
+        }
+        @media (min-width: 641px) {
+          /* FIX: hide hamburger on desktop */
+          .hide-desktop { display: none !important; }
         }
         @media (min-width: 900px) {
           .show-desktop { display: flex !important; }
@@ -203,7 +371,7 @@ export default function LandingPage() {
 
           {/* Desktop links */}
           <div className="show-desktop" style={{ display: 'none', gap: 4, alignItems: 'center' }}>
-            {[['#how-it-works','How it works'],['#roles','Who uses it'],['#features','Features']].map(([href, label]) => (
+            {[['#how-it-works', 'How it works'], ['#roles', 'Who uses it'], ['#features', 'Features']].map(([href, label]) => (
               <a key={href} href={href} style={{ color: '#8b9ab5', fontSize: 14, padding: '6px 14px', borderRadius: 8, transition: 'color 0.15s' }}
                 onMouseEnter={e => ((e.target as HTMLElement).style.color = '#e8f0fe')}
                 onMouseLeave={e => ((e.target as HTMLElement).style.color = '#8b9ab5')}
@@ -221,12 +389,12 @@ export default function LandingPage() {
             <button onClick={() => router.push('/register')} style={{ background: 'linear-gradient(135deg,#00d4ff,#0099cc)', border: 'none', color: '#07090f', borderRadius: 10, padding: '8px 18px', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: "'Outfit',sans-serif" }}>
               Get started
             </button>
-            {/* Mobile hamburger */}
+            {/* FIX: hamburger — hide-desktop now correctly defined in CSS */}
             <button onClick={() => setMobileNav(!mobileNav)} className="hide-desktop" style={{ background: 'transparent', border: 'none', color: '#8b9ab5', cursor: 'pointer', padding: 4, display: 'flex' }}>
               <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                 {mobileNav
-                  ? <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>
-                  : <><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></>
+                  ? <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>
+                  : <><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></>
                 }
               </svg>
             </button>
@@ -236,7 +404,7 @@ export default function LandingPage() {
         {/* Mobile menu */}
         {mobileNav && (
           <div style={{ borderTop: '1px solid #1e2a3a', padding: '12px 16px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {[['#how-it-works','How it works'],['#roles','Who uses it'],['#features','Features']].map(([href, label]) => (
+            {[['#how-it-works', 'How it works'], ['#roles', 'Who uses it'], ['#features', 'Features']].map(([href, label]) => (
               <a key={href} href={href} onClick={() => setMobileNav(false)} style={{ color: '#8b9ab5', fontSize: 14, padding: '10px 12px', borderRadius: 8 }}>{label}</a>
             ))}
           </div>
@@ -249,7 +417,7 @@ export default function LandingPage() {
         <div style={{ position: 'absolute', top: '15%', left: '5%', width: 500, height: 500, background: 'radial-gradient(circle,rgba(0,212,255,0.05) 0%,transparent 70%)', pointerEvents: 'none' }} />
         <div style={{ position: 'absolute', bottom: '10%', right: '5%', width: 400, height: 400, background: 'radial-gradient(circle,rgba(0,229,160,0.04) 0%,transparent 70%)', pointerEvents: 'none' }} />
 
-        <div style={{ maxWidth: 780, textAlign: 'center', position: 'relative' }}>
+        <div style={{ maxWidth: 780, textAlign: 'center', position: 'relative', width: '100%' }}>
           {/* Badge */}
           <div className="anim-fade" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.2)', borderRadius: 20, padding: '6px 16px', marginBottom: 28 }}>
             <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#00e5a0', animation: 'pulse 2s infinite', display: 'inline-block', flexShrink: 0 }} />
@@ -290,11 +458,28 @@ export default function LandingPage() {
               </div>
             ))}
           </div>
+
+          {/* ── FIX: Scroll pointer animation ── */}
+          <div
+            className="anim-fade3"
+            style={{ marginTop: 52, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}
+          >
+            <a href="#stats-section" aria-label="Scroll down" className="scroll-indicator">
+              <div className="scroll-mouse">
+                <div className="scroll-mouse-dot" />
+              </div>
+              <div className="scroll-arrows">
+                <div className="scroll-arrow" />
+                <div className="scroll-arrow" />
+                <div className="scroll-arrow" />
+              </div>
+            </a>
+          </div>
         </div>
       </section>
 
       {/* ═══════════════════════════════════════════════════════ STATS */}
-      <section style={{ borderTop: '1px solid #1e2a3a', borderBottom: '1px solid #1e2a3a', padding: '28px 20px' }}>
+      <section id="stats-section" className="reveal" style={{ borderTop: '1px solid #1e2a3a', borderBottom: '1px solid #1e2a3a', padding: '28px 20px' }}>
         <div style={{ maxWidth: 900, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 20 }} id="stats-grid">
           {STATS.map(s => (
             <div key={s.label} style={{ textAlign: 'center' }}>
@@ -307,7 +492,7 @@ export default function LandingPage() {
       </section>
 
       {/* ═══════════════════════════════════════════════════════ WHAT IS TCRS */}
-      <section style={{ padding: 'clamp(60px,8vw,100px) 20px' }}>
+      <section className="reveal" style={{ padding: 'clamp(60px,8vw,100px) 20px' }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
           <div style={{ maxWidth: 580, marginBottom: 48 }}>
             <span style={{ color: '#00d4ff', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px' }}>What is CIVIC SENSE</span>
@@ -338,7 +523,7 @@ export default function LandingPage() {
                 body: 'Auditors have read-only access to everything. Appeals can reopen closed cases. Admins cannot delete audit logs. Transparency is not optional.',
               },
             ].map(c => (
-              <div key={c.title} style={{ background: '#0d1117', border: '1px solid #1e2a3a', borderTop: `2px solid ${c.color}`, borderRadius: 16, padding: '24px 22px', transition: 'border-color 0.2s' }}
+              <div key={c.title} onMouseMove={handleMouseMove} onTouchMove={handleMouseMove} onTouchEnd={handleTouchEnd} className="glow-card" style={{ borderTop: `2px solid ${c.color}`, padding: '24px 22px' }}
                 onMouseEnter={e => (e.currentTarget.style.borderColor = c.color)}
                 onMouseLeave={e => { e.currentTarget.style.borderTopColor = c.color; e.currentTarget.style.borderColor = `${c.color} #1e2a3a #1e2a3a #1e2a3a`; }}
               >
@@ -352,7 +537,7 @@ export default function LandingPage() {
       </section>
 
       {/* ═══════════════════════════════════════════════════════ 4 ROLES */}
-      <section id="roles" style={{ padding: 'clamp(60px,8vw,100px) 20px', background: '#0a0d14' }}>
+      <section id="roles" className="reveal" style={{ padding: 'clamp(60px,8vw,100px) 20px', background: '#0a0d14' }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: 52 }}>
             <span style={{ color: '#a78bfa', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px' }}>Who uses TCRS</span>
@@ -417,11 +602,11 @@ export default function LandingPage() {
           {/* All 4 role cards grid (always visible) */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(230px,1fr))', gap: 14, marginTop: 28 }}>
             {ROLES.map((r, i) => (
-              <div key={r.title} onClick={() => setActiveRole(i)} style={{
+              <div key={r.title} onClick={() => setActiveRole(i)} onMouseMove={handleMouseMove} onTouchMove={handleMouseMove} onTouchEnd={handleTouchEnd} className="glow-card" style={{
                 background: activeRole === i ? `${r.color}08` : '#0d1117',
                 border: activeRole === i ? `1.5px solid ${r.color}50` : '1px solid #1e2a3a',
-                borderRadius: 14, padding: '20px',
-                cursor: 'pointer', transition: 'all 0.2s',
+                padding: '20px',
+                cursor: 'pointer',
               }}
                 onMouseEnter={e => (e.currentTarget.style.borderColor = `${r.color}50`)}
                 onMouseLeave={e => (e.currentTarget.style.borderColor = activeRole === i ? `${r.color}50` : '#1e2a3a')}
@@ -438,7 +623,7 @@ export default function LandingPage() {
       </section>
 
       {/* ═══════════════════════════════════════════════════════ HOW IT WORKS */}
-      <section id="how-it-works" style={{ padding: 'clamp(60px,8vw,100px) 20px' }}>
+      <section id="how-it-works" className="reveal" style={{ padding: 'clamp(60px,8vw,100px) 20px' }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: 52 }}>
             <span style={{ color: '#00d4ff', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px' }}>How it works</span>
@@ -491,7 +676,7 @@ export default function LandingPage() {
       </section>
 
       {/* ═══════════════════════════════════════════════════════ FEATURES */}
-      <section id="features" style={{ padding: 'clamp(60px,8vw,100px) 20px', background: '#0a0d14' }}>
+      <section id="features" className="reveal" style={{ padding: 'clamp(60px,8vw,100px) 20px', background: '#0a0d14' }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: 52 }}>
             <span style={{ color: '#00e5a0', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px' }}>Features</span>
@@ -502,10 +687,7 @@ export default function LandingPage() {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 14 }}>
             {FEATURES.map(f => (
-              <div key={f.title} style={{ background: '#0d1117', border: '1px solid #1e2a3a', borderRadius: 14, padding: '20px 18px', display: 'flex', gap: 14, alignItems: 'flex-start', transition: 'border-color 0.2s' }}
-                onMouseEnter={e => (e.currentTarget.style.borderColor = '#243044')}
-                onMouseLeave={e => (e.currentTarget.style.borderColor = '#1e2a3a')}
-              >
+              <div key={f.title} onMouseMove={handleMouseMove} onTouchMove={handleMouseMove} onTouchEnd={handleTouchEnd} className="glow-card" style={{ padding: '20px 18px', display: 'flex', gap: 14, alignItems: 'flex-start' }}>
                 <span style={{ fontSize: 24, flexShrink: 0, marginTop: 2 }}>{f.icon}</span>
                 <div>
                   <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 6, color: '#e8f0fe' }}>{f.title}</h3>
@@ -518,7 +700,7 @@ export default function LandingPage() {
       </section>
 
       {/* ═══════════════════════════════════════════════════════ CTA */}
-      <section style={{ padding: 'clamp(60px,8vw,100px) 20px', background: 'linear-gradient(160deg,#0a1628 0%,#0d1117 100%)', borderTop: '1px solid #1e2a3a', textAlign: 'center' }}>
+      <section className="reveal" style={{ padding: 'clamp(60px,8vw,100px) 20px', background: 'linear-gradient(160deg,#0a1628 0%,#0d1117 100%)', borderTop: '1px solid #1e2a3a', textAlign: 'center' }}>
         <div style={{ maxWidth: 620, margin: '0 auto' }}>
           <div style={{ fontSize: 48, marginBottom: 20 }}>🏙️</div>
           <h2 style={{ fontSize: 'clamp(24px,4vw,38px)', fontWeight: 800, marginBottom: 14, lineHeight: 1.2 }}>
@@ -550,12 +732,12 @@ export default function LandingPage() {
             © 2026 Transparent Civic Reporting System · Built for Gurugram communities
           </p>
           <div style={{ display: 'flex', gap: 16 }}>
-            {['#how-it-works','#roles','#features'].map((href, i) => (
+            {['#how-it-works', '#roles', '#features'].map((href, i) => (
               <a key={href} href={href} style={{ color: '#4a5568', fontSize: 12, transition: 'color 0.15s' }}
                 onMouseEnter={e => ((e.target as HTMLElement).style.color = '#8b9ab5')}
                 onMouseLeave={e => ((e.target as HTMLElement).style.color = '#4a5568')}
               >
-                {['How it works','Roles','Features'][i]}
+                {['How it works', 'Roles', 'Features'][i]}
               </a>
             ))}
           </div>
