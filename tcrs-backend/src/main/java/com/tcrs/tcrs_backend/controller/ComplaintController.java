@@ -6,11 +6,10 @@ import com.tcrs.tcrs_backend.repository.ComplaintRepository;
 import com.tcrs.tcrs_backend.repository.UserRepository;
 import com.tcrs.tcrs_backend.service.AuditLogService;
 import com.tcrs.tcrs_backend.service.EmailService;
-//import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
-import org.springframework.cache.annotation.Caching;
+//import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.*;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -22,6 +21,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 @RestController
@@ -34,45 +34,48 @@ public class ComplaintController {
     @Autowired private EmailService emailService;
     @Autowired private MongoTemplate mongoTemplate;
 
+    // ── Submit ────────────────────────────────────────────────────────────────
     @PostMapping
-    @CacheEvict(value = {"complaints","stats","nearbyComplaints"}, allEntries = true)
-    public ResponseEntity<?> submit(@RequestBody Map<String, Object> body, Authentication auth) {
+    @CacheEvict(value = {"stats"}, allEntries = true)
+    public ResponseEntity<?> submit(@RequestBody Map<String, Object> body,
+                                    Authentication auth) {
         String email = auth.getName();
         User user = userRepository.findByEmail(email)
             .orElseThrow(() -> new NoSuchElementException("User not found"));
 
-        validateRequired(body, "title","description","category","location");
+        validateRequired(body, "title", "description", "category", "location");
 
         Complaint c = new Complaint();
-        c.setTitle(((String)body.get("title")).trim());
-        c.setDescription(((String)body.get("description")).trim());
-        c.setCategory((String)body.get("category"));
-        c.setLocation(((String)body.get("location")).trim());
+        c.setTitle(((String) body.get("title")).trim());
+        c.setDescription(((String) body.get("description")).trim());
+        c.setCategory((String) body.get("category"));
+        c.setLocation(((String) body.get("location")).trim());
         c.setStatus("PENDING");
         c.setSubmittedByEmail(email);
         c.setSubmittedByName(user.getName());
-        if (body.get("latitude")  != null) c.setLatitude(((Number)body.get("latitude")).doubleValue());
-        if (body.get("longitude") != null) c.setLongitude(((Number)body.get("longitude")).doubleValue());
+        if (body.get("latitude")  != null) c.setLatitude(((Number) body.get("latitude")).doubleValue());
+        if (body.get("longitude") != null) c.setLongitude(((Number) body.get("longitude")).doubleValue());
 
         complaintRepository.save(c);
-        auditLogService.log(email, "COMPLAINT_CREATED", "COMPLAINT", c.getId(), "Submitted: "+c.getTitle());
+        auditLogService.log(email, "COMPLAINT_CREATED", "COMPLAINT", c.getId(),
+            "Submitted: " + c.getTitle());
         return ResponseEntity.ok(c);
     }
 
+    // ── My complaints (paginated) ─────────────────────────────────────────────
     @GetMapping("/my")
     public ResponseEntity<?> myComplaints(
-            @RequestParam(defaultValue="0") int page,
-            @RequestParam(defaultValue="10") int size,
-            @RequestParam(required=false) String status,
+            @RequestParam(defaultValue = "0")  int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false)    String status,
             Authentication auth) {
-
         Criteria criteria = Criteria.where("submittedByEmail").is(auth.getName());
         if (status != null && !status.isBlank() && !status.equals("ALL"))
             criteria = criteria.and("status").is(status);
         return ResponseEntity.ok(pageQuery(criteria, page, size));
     }
-    
-    // get single complaint
+
+    // ── Get single complaint ──────────────────────────────────────────────────
     @GetMapping("/{id}")
     public ResponseEntity<?> getById(@PathVariable String id, Authentication auth) {
         Complaint c = complaintRepository.findById(id)
@@ -84,112 +87,131 @@ public class ComplaintController {
             || (role.equals("ROLE_OFFICIAL") && email.equals(c.getAssignedOfficialEmail()))
             || role.equals("ROLE_ADMIN") || role.equals("ROLE_AUDITOR");
 
-        if (!ok) return ResponseEntity.status(403).body(Map.of("message","Access denied"));
+        if (!ok) return ResponseEntity.status(403).body(Map.of("message", "Access denied"));
         return ResponseEntity.ok(c);
     }
 
-    // ── Get all complaints (admin / auditor) ───────────────────────────────────
+    // ── All complaints (admin/auditor, paginated) ─────────────────────────────
     @GetMapping("/all")
     @PreAuthorize("hasAnyRole('ADMIN','AUDITOR')")
     public ResponseEntity<?> getAll(
-            @RequestParam(defaultValue="0") int page,
-            @RequestParam(defaultValue="10") int size,
-            @RequestParam(required=false) String status,
-            @RequestParam(required=false) String category,
-            @RequestParam(required=false) String search) {
+            @RequestParam(defaultValue = "0")  int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) String search) {
 
         List<Criteria> conds = new ArrayList<>();
-        if (status   != null && !status.isBlank()   && !status.equals("ALL"))   conds.add(Criteria.where("status").is(status));
-        if (category != null && !category.isBlank() && !category.equals("ALL")) conds.add(Criteria.where("category").is(category));
-        if (search   != null && !search.isBlank())
+        if (status   != null && !status.isBlank()   && !status.equals("ALL"))
+            conds.add(Criteria.where("status").is(status));
+        if (category != null && !category.isBlank() && !category.equals("ALL"))
+            conds.add(Criteria.where("category").is(category));
+        if (search != null && !search.isBlank())
             conds.add(new Criteria().orOperator(
-                Criteria.where("title").regex(search,"i"),
-                Criteria.where("location").regex(search,"i"),
-                Criteria.where("submittedByName").regex(search,"i")
-            ));
+                Criteria.where("title").regex(search, "i"),
+                Criteria.where("location").regex(search, "i"),
+                Criteria.where("submittedByName").regex(search, "i")));
 
-        Criteria criteria = conds.isEmpty() ? new Criteria() : new Criteria().andOperator(conds.toArray(new Criteria[0]));
+        Criteria criteria = conds.isEmpty()
+            ? new Criteria()
+            : new Criteria().andOperator(conds.toArray(new Criteria[0]));
         return ResponseEntity.ok(pageQuery(criteria, page, size));
     }
 
-    // complaint assigned to me (official)
+    // ── Assigned to me (official, paginated) ──────────────────────────────────
     @GetMapping("/assigned")
     @PreAuthorize("hasRole('OFFICIAL')")
     public ResponseEntity<?> assignedToMe(
-            @RequestParam(defaultValue="0") int page,
-            @RequestParam(defaultValue="10") int size,
-            @RequestParam(required=false) String status,
+            @RequestParam(defaultValue = "0")  int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String status,
             Authentication auth) {
-
         Criteria criteria = Criteria.where("assignedOfficialEmail").is(auth.getName());
         if (status != null && !status.isBlank() && !status.equals("ALL"))
             criteria = criteria.and("status").is(status);
         return ResponseEntity.ok(pageQuery(criteria, page, size));
     }
 
-    // ── Nearby complaints (map feature) ───────────────────────────────────────
-    // Returns complaints within ~5km of given coordinates
+    // ── Nearby — NO caching, returns safe Map objects ─────────────────────────
+    // NOTE: @Cacheable removed — LocalDateTime in Complaint causes Redis
+    //       deserialization failures on repeated calls. Map response avoids this.
     @GetMapping("/nearby")
     public ResponseEntity<?> nearby(
             @RequestParam double lat,
             @RequestParam double lng,
             @RequestParam(defaultValue = "0.05") double radius) {
-        List<Complaint> nearby = complaintRepository.findByLatitudeBetweenAndLongitudeBetween(
+        List<Complaint> raw = complaintRepository
+            .findByLatitudeBetweenAndLongitudeBetween(
                 lat - radius, lat + radius,
                 lng - radius, lng + radius);
-        return ResponseEntity.ok(nearby);
+        return ResponseEntity.ok(raw.stream().map(this::toMapDTO).toList());
     }
 
-    // ── All complaints with coordinates (for full map view) ───────────────────
+    // ── Map view — NO caching, returns safe Map objects ───────────────────────
+    // NOTE: @Cacheable removed intentionally — caching Complaint objects that
+    //       contain LocalDateTime causes a Jackson deserialization 500 on the
+    //       second request when Redis tries to reconstruct the type.
+    //       The response is a lightweight DTO (plain Map) so it's fast anyway.
     @GetMapping("/map")
-    @Cacheable(value="complaints", key="'map-all'")
-    public List<Complaint> mapComplaints() {
-        return complaintRepository.findByLatitudeNotNullAndLongitudeNotNull();
+    public ResponseEntity<?> mapComplaints() {
+        List<Complaint> complaints = complaintRepository
+            .findByLatitudeNotNullAndLongitudeNotNull();
+        return ResponseEntity.ok(complaints.stream().map(this::toMapDTO).toList());
     }
 
-    // update status admin
+    // ── Update status (admin) ─────────────────────────────────────────────────
     @PatchMapping("/admin/{id}/status")
     @PreAuthorize("hasRole('ADMIN')")
-    @Caching(evict={@CacheEvict(value="complaints",allEntries=true),@CacheEvict(value="stats",allEntries=true)})
+    @CacheEvict(value = "stats", allEntries = true)
     public ResponseEntity<?> updateStatus(@PathVariable String id,
-                                          @RequestBody Map<String,String> body, Authentication auth) {
+                                          @RequestBody Map<String, String> body,
+                                          Authentication auth) {
         Complaint c = complaintRepository.findById(id)
             .orElseThrow(() -> new NoSuchElementException("Complaint not found"));
         String newStatus = body.get("status");
-        if (newStatus == null || newStatus.isBlank()) throw new IllegalArgumentException("Status is required");
+        if (newStatus == null || newStatus.isBlank())
+            throw new IllegalArgumentException("Status is required");
         String old = c.getStatus();
         c.setStatus(newStatus);
         if (body.get("adminRemarks") != null) c.setAdminRemarks(body.get("adminRemarks"));
         complaintRepository.save(c);
-        auditLogService.log(auth.getName(),"STATUS_UPDATED","COMPLAINT",id,"Status: "+old+" → "+newStatus);
+        auditLogService.log(auth.getName(), "STATUS_UPDATED", "COMPLAINT", id,
+            "Status: " + old + " → " + newStatus);
         return ResponseEntity.ok(c);
     }
 
-    // assign official by admin
+    // ── Assign official (admin) ───────────────────────────────────────────────
     @PatchMapping("/admin/{id}/assign")
     @PreAuthorize("hasRole('ADMIN')")
-    @Caching(evict={@CacheEvict(value="complaints",allEntries=true),@CacheEvict(value="stats",allEntries=true)})
+    @CacheEvict(value = "stats", allEntries = true)
     public ResponseEntity<?> assignOfficial(@PathVariable String id,
-                                             @RequestBody Map<String,String> body, Authentication auth) {
+                                             @RequestBody Map<String, String> body,
+                                             Authentication auth) {
         Complaint c = complaintRepository.findById(id)
             .orElseThrow(() -> new NoSuchElementException("Complaint not found"));
         String name = body.get("officialName");
-        if (name == null || name.isBlank()) throw new IllegalArgumentException("Official name is required");
-        User off = userRepository.findByNameIgnoreCaseAndRole(name,"OFFICIAL")
-            .orElseThrow(() -> new NoSuchElementException("No official found: "+name));
+        if (name == null || name.isBlank())
+            throw new IllegalArgumentException("Official name is required");
+        User off = userRepository.findByNameIgnoreCaseAndRole(name, "OFFICIAL")
+            .orElseThrow(() -> new NoSuchElementException("No official found: " + name));
         c.setAssignedOfficialEmail(off.getEmail());
         c.setAssignedOfficialName(off.getName());
         c.setStatus("IN_PROGRESS");
         complaintRepository.save(c);
-        auditLogService.log(auth.getName(),"OFFICIAL_ASSIGNED","COMPLAINT",id,"Assigned to "+off.getName());
-        try { emailService.sendComplaintAssignedEmail(c.getSubmittedByEmail(), off.getName(), c.getTitle()); } catch (Exception ignored) {}
+        auditLogService.log(auth.getName(), "OFFICIAL_ASSIGNED", "COMPLAINT", id,
+            "Assigned to " + off.getName());
+        try {
+            emailService.sendComplaintAssignedEmail(
+                c.getSubmittedByEmail(), off.getName(), c.getTitle());
+        } catch (Exception ignored) {}
         return ResponseEntity.ok(c);
     }
 
-    // ── Get available officials (admin) ────────────────────────────────────────
+    // ── Available officials (admin) ───────────────────────────────────────────
     @GetMapping("/admin/officials")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<?> getOfficials() {
+    @Cacheable(value = "officials", key = "'all'")
+        public ResponseEntity<?> getOfficials() {
         List<User> officials = userRepository.findByRole("OFFICIAL");
         return ResponseEntity.ok(
                 officials.stream()
@@ -204,95 +226,133 @@ public class ComplaintController {
                         .toList());
     }
 
-    // ── Submit appeal (citizen) ────────────────────────────────────────────────
+    // ── Submit appeal (citizen) ───────────────────────────────────────────────
     @PostMapping("/{id}/appeal")
-    @CacheEvict(value="complaints", allEntries=true)
     public ResponseEntity<?> submitAppeal(@PathVariable String id,
-                                          @RequestBody Map<String,String> body, Authentication auth) {
+                                          @RequestBody Map<String, String> body,
+                                          Authentication auth) {
         Complaint c = complaintRepository.findById(id)
             .orElseThrow(() -> new NoSuchElementException("Complaint not found"));
         if (!c.getSubmittedByEmail().equals(auth.getName()))
-            return ResponseEntity.status(403).body(Map.of("message","You can only appeal your own complaints"));
-        if (c.isAppealSubmitted()) throw new IllegalArgumentException("Appeal already submitted");
+            return ResponseEntity.status(403).body(
+                Map.of("message", "You can only appeal your own complaints"));
+        if (c.isAppealSubmitted())
+            throw new IllegalArgumentException("Appeal already submitted");
         if (!c.getStatus().equals("RESOLVED") && !c.getStatus().equals("REJECTED"))
-            throw new IllegalArgumentException("You can only appeal resolved or rejected complaints");
+            throw new IllegalArgumentException(
+                "You can only appeal resolved or rejected complaints");
         String reason = body.get("reason");
         if (reason == null || reason.trim().length() < 10)
-            throw new IllegalArgumentException("Provide a reason of at least 10 characters");
+            throw new IllegalArgumentException(
+                "Provide a reason of at least 10 characters");
         c.setAppealSubmitted(true);
         c.setAppealReason(reason.trim());
         c.setAppealStatus("PENDING_REVIEW");
         c.setAppealSubmittedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
         complaintRepository.save(c);
-        auditLogService.log(auth.getName(),"APPEAL_SUBMITTED","COMPLAINT",id,"Appeal: "+reason);
+        auditLogService.log(auth.getName(), "APPEAL_SUBMITTED", "COMPLAINT", id,
+            "Appeal: " + reason);
         return ResponseEntity.ok(c);
     }
 
-    // ── Review appeal (admin) ──────────────────────────────────────────────────
+    // ── Review appeal (admin) ─────────────────────────────────────────────────
     @PatchMapping("/admin/{id}/appeal")
     @PreAuthorize("hasRole('ADMIN')")
-    @CacheEvict(value="complaints", allEntries=true)
     public ResponseEntity<?> reviewAppeal(@PathVariable String id,
-                                           @RequestBody Map<String,String> body, Authentication auth) {
+                                           @RequestBody Map<String, String> body,
+                                           Authentication auth) {
         Complaint c = complaintRepository.findById(id)
             .orElseThrow(() -> new NoSuchElementException("Complaint not found"));
         String appealStatus = body.get("appealStatus");
-        if (appealStatus == null) throw new IllegalArgumentException("appealStatus required");
+        if (appealStatus == null)
+            throw new IllegalArgumentException("appealStatus is required");
         c.setAppealStatus(appealStatus);
         if ("ACCEPTED".equals(appealStatus)) c.setStatus("IN_PROGRESS");
         complaintRepository.save(c);
-        auditLogService.log(auth.getName(),"APPEAL_REVIEWED","COMPLAINT",id,"Appeal: "+appealStatus);
+        auditLogService.log(auth.getName(), "APPEAL_REVIEWED", "COMPLAINT", id,
+            "Appeal: " + appealStatus);
         return ResponseEntity.ok(c);
     }
 
+    // ── Delete (admin) ────────────────────────────────────────────────────────
     @DeleteMapping("/admin/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    @Caching(evict={@CacheEvict(value="complaints",allEntries=true),@CacheEvict(value="stats",allEntries=true)})
+    @CacheEvict(value = "stats", allEntries = true)
     public ResponseEntity<?> delete(@PathVariable String id, Authentication auth) {
-        if (!complaintRepository.existsById(id)) throw new NoSuchElementException("Complaint not found");
+        if (!complaintRepository.existsById(id))
+            throw new NoSuchElementException("Complaint not found");
         complaintRepository.deleteById(id);
-        auditLogService.log(auth.getName(),"COMPLAINT_DELETED","COMPLAINT",id,"Deleted");
-        return ResponseEntity.ok(Map.of("message","Deleted successfully"));
+        auditLogService.log(auth.getName(), "COMPLAINT_DELETED", "COMPLAINT", id,
+            "Deleted");
+        return ResponseEntity.ok(Map.of("message", "Deleted successfully"));
     }
 
+    // ── Stats (admin) — cached safely (only numbers, no LocalDateTime) ────────
     @GetMapping("/admin/stats")
     @PreAuthorize("hasRole('ADMIN')")
-    @Cacheable(value="stats", key="'dashboard'")
-    public Map<String, Long> stats() {
-        Map<String, Long> stats = new java.util.HashMap<>();
-        stats.put("total",      complaintRepository.count());
-        stats.put("pending",    complaintRepository.countByStatus("PENDING"));
-        stats.put("inProgress", complaintRepository.countByStatus("IN_PROGRESS"));
-        stats.put("resolved",   complaintRepository.countByStatus("RESOLVED"));
-        stats.put("rejected",   complaintRepository.countByStatus("REJECTED"));
-        return stats;
+    @Cacheable(value = "stats", key = "'dashboard'")
+    public ResponseEntity<?> stats() {
+        return ResponseEntity.ok(Map.of(
+            "total",      complaintRepository.count(),
+            "pending",    complaintRepository.countByStatus("PENDING"),
+            "inProgress", complaintRepository.countByStatus("IN_PROGRESS"),
+            "resolved",   complaintRepository.countByStatus("RESOLVED"),
+            "rejected",   complaintRepository.countByStatus("REJECTED")
+        ));
     }
 
-    private Map<String,Object> pageQuery(Criteria criteria, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC,"createdAt"));
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    // Convert Complaint to a plain Map for map/nearby endpoints
+    // This avoids ALL Redis serialization issues because Map<String,Object>
+    // with only String/Double/Boolean values is trivially serializable
+    private Map<String, Object> toMapDTO(Complaint c) {
+        Map<String, Object> dto = new LinkedHashMap<>();
+        dto.put("id",          c.getId());
+        dto.put("title",       c.getTitle());
+        dto.put("description", c.getDescription());
+        dto.put("category",    c.getCategory());
+        dto.put("location",    c.getLocation());
+        dto.put("status",      c.getStatus());
+        dto.put("latitude",    c.getLatitude());
+        dto.put("longitude",   c.getLongitude());
+        dto.put("submittedByName",  c.getSubmittedByName());
+        dto.put("submittedByEmail", c.getSubmittedByEmail());
+        // Format date as plain string — no LocalDateTime objects in the response
+        dto.put("createdAt", c.getCreatedAt() != null
+            ? c.getCreatedAt()
+                .atZone(ZoneId.of("Asia/Kolkata"))
+                .format(DateTimeFormatter.ofPattern("dd MMM yyyy, hh:mm a"))
+            : "");
+        return dto;
+    }
+
+    private Map<String, Object> pageQuery(Criteria criteria, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size,
+            Sort.by(Sort.Direction.DESC, "createdAt"));
         Query q      = new Query(criteria).with(pageable);
         Query countQ = new Query(criteria);
         List<Complaint> content = mongoTemplate.find(q, Complaint.class);
-        long total   = mongoTemplate.count(countQ, Complaint.class);
-        int totalPages = (int)Math.ceil((double)total/size);
-        Map<String,Object> result = new LinkedHashMap<>();
+        long total = mongoTemplate.count(countQ, Complaint.class);
+        int totalPages = (int) Math.ceil((double) total / size);
+        Map<String, Object> result = new LinkedHashMap<>();
         result.put("content",       content);
         result.put("page",          page);
         result.put("size",          size);
         result.put("totalElements", total);
         result.put("totalPages",    totalPages);
         result.put("first",         page == 0);
-        result.put("last",          page >= totalPages-1);
-        result.put("hasNext",       page < totalPages-1);
+        result.put("last",          page >= totalPages - 1);
+        result.put("hasNext",       page < totalPages - 1);
         result.put("hasPrev",       page > 0);
         return result;
     }
 
-    private void validateRequired(Map<String,Object> body, String... fields) {
+    private void validateRequired(Map<String, Object> body, String... fields) {
         for (String f : fields) {
             Object v = body.get(f);
             if (v == null || v.toString().isBlank())
-                throw new IllegalArgumentException(f+" is required");
+                throw new IllegalArgumentException(f + " is required");
         }
     }
 }
