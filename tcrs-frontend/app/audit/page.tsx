@@ -1,146 +1,129 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
-import API from '@/lib/api';
+import Pagination from '@/components/Pagination';
+import { useTheme } from '@/lib/ThemeContext';
 import { isLoggedIn, getRole } from '@/lib/auth';
-import { AuditLog } from '@/types';
+import { formatIST } from '@/lib/dateUtils';
+import API from '@/lib/api';
 
-const ACTION_COLOR: Record<string, string> = {
-  USER_REGISTERED:   '#00e5a0',
-  USER_LOGIN:        '#00d4ff',
-  COMPLAINT_CREATED: '#a78bfa',
-  STATUS_UPDATED:    '#ffb800',
-  COMPLAINT_DELETED: '#ff4d6d',
+const ACTION_COLORS: Record<string,string> = {
+  USER_REGISTERED:'#00e5a0', USER_LOGIN:'#00d4ff',
+  COMPLAINT_CREATED:'#a78bfa', STATUS_UPDATED:'#ffb800',
+  OFFICIAL_ASSIGNED:'#00d4ff', APPEAL_SUBMITTED:'#ffb800',
+  APPEAL_REVIEWED:'#00e5a0', COMPLAINT_DELETED:'#ff4d6d',
+  SUGGESTION_SUBMITTED:'#a78bfa', SUGGESTION_REVIEWED:'#00e5a0',
 };
+
+const ALL_ACTIONS = ['ALL','USER_REGISTERED','USER_LOGIN','COMPLAINT_CREATED','STATUS_UPDATED','OFFICIAL_ASSIGNED','APPEAL_SUBMITTED','APPEAL_REVIEWED','COMPLAINT_DELETED'];
 
 export default function AuditPage() {
   const router = useRouter();
-  const [logs, setLogs]       = useState<AuditLog[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch]   = useState('');
+  const { t, isDark } = useTheme();
+  const [pageData, setPageData] = useState<any>(null);
+  const [search, setSearch]     = useState('');
+  const [action, setAction]     = useState('ALL');
+  const [curPage, setCurPage]   = useState(0);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState('');
 
   useEffect(() => {
     if (!isLoggedIn()) { router.push('/login'); return; }
-    const role = getRole();
-    if (role !== 'ADMIN' && role !== 'AUDITOR') { router.push('/dashboard'); return; }
-    fetchLogs();
+    const r = getRole();
+    if (r !== 'ADMIN' && r !== 'AUDITOR') { router.push('/dashboard'); return; }
+    fetchLogs(0, '', 'ALL');
   }, []);
 
-  const fetchLogs = async () => {
+  const fetchLogs = useCallback(async (page: number, s: string, a: string) => {
+    setLoading(true); setError('');
     try {
-      const res = await API.get('/audit');
-      setLogs(res.data);
-    } catch {}
-    finally { setLoading(false); }
-  };
+      const p = new URLSearchParams({ page: String(page), size: '15' });
+      if (s) p.set('search', s);
+      if (a !== 'ALL') p.set('action', a);
+      const res = await API.get(`/audit?${p}`);
+      setPageData(res.data);
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to load audit logs');
+    } finally { setLoading(false); }
+  }, []);
 
-  const filtered = logs.filter(l =>
-    search === '' ||
-    l.description.toLowerCase().includes(search.toLowerCase()) ||
-    l.performedByEmail.toLowerCase().includes(search.toLowerCase()) ||
-    l.action.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const formatDate = (d: string) => new Date(d).toLocaleString('en-IN', {
-    day: 'numeric', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  });
+  const handleSearch = (v: string) => { setSearch(v); setCurPage(0); fetchLogs(0, v, action); };
+  const handleAction = (a: string) => { setAction(a); setCurPage(0); fetchLogs(0, search, a); };
+  const handlePage   = (p: number) => { setCurPage(p); fetchLogs(p, search, action); };
 
   return (
-    <div style={{ minHeight: '100vh', background: '#07090f' }}>
+    <div style={{ minHeight:'100vh', background:t.bg, transition:'background 0.25s' }}>
       <Navbar />
-      <main style={{ maxWidth: 1000, margin: '0 auto', padding: '40px 24px' }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
+        *{box-sizing:border-box}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes fu{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+        .fu{animation:fu 0.4s ease both}
+        .fu1{animation:fu 0.4s 0.06s ease both}
+        .fu2{animation:fu 0.4s 0.12s ease both}
+        .row-hover:hover{background:${isDark?'#111825':'#f8fafc'}!important}
+      `}</style>
+      <main style={{ maxWidth:1100, margin:'0 auto', padding:'32px 16px 60px' }}>
 
-        <div className="fade-up" style={{ marginBottom: 28 }}>
-          <h1 style={{ fontSize: 26, fontWeight: 800, marginBottom: 6 }}>Audit logs</h1>
-          <p style={{ color: '#8b9ab5', fontSize: 14 }}>
-            Full trail of every action taken on the platform.
-          </p>
+        <div className="fu" style={{ marginBottom:24 }}>
+          <h1 style={{ fontSize:'clamp(22px,3.5vw,26px)', fontWeight:800, color:t.text, marginBottom:6 }}>Audit Logs</h1>
+          <p style={{ color:t.text2, fontSize:14 }}>Full trail of every action taken on the platform.</p>
         </div>
 
-        <div className="fade-up-1" style={{ marginBottom: 20 }}>
+        {/* Search + action filter */}
+        <div className="fu1" style={{ display:'flex', gap:10, marginBottom:14, flexWrap:'wrap' }}>
           <input
-            type="text" placeholder="Search logs by action, email, or description..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
+            type="text" placeholder="Search by description, email or action..."
+            value={search} onChange={e=>handleSearch(e.target.value)}
+            style={{ flex:1, minWidth:200, background:isDark?'#0d1117':t.card, border:`1.5px solid ${t.border}`, borderRadius:10, color:t.text, padding:'10px 14px', fontSize:14, outline:'none', fontFamily:"'Outfit',sans-serif", transition:'border-color 0.2s' }}
+            onFocus={e=>(e.currentTarget.style.borderColor=t.accent)}
+            onBlur={e=>(e.currentTarget.style.borderColor=t.border)}
           />
+          <select value={action} onChange={e=>handleAction(e.target.value)}
+            style={{ background:isDark?'#0d1117':t.card, border:`1.5px solid ${t.border}`, borderRadius:10, color:t.text, padding:'10px 14px', fontSize:13, outline:'none', fontFamily:"'Outfit',sans-serif", cursor:'pointer' }}>
+            {ALL_ACTIONS.map(a => <option key={a} value={a}>{a.replace(/_/g,' ')}</option>)}
+          </select>
         </div>
 
-        {loading ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}>
-            <div style={{
-              width: 32, height: 32, border: '2px solid #1e2a3a',
-              borderTopColor: '#00d4ff', borderRadius: '50%',
-              animation: 'spin 0.8s linear infinite',
-            }}/>
-          </div>
-        ) : (
-          <div className="fade-up-2" style={{
-            background: '#0d1117', border: '1px solid #1e2a3a',
-            borderRadius: 16, overflow: 'hidden',
-          }}>
-            {/* Table header */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 180px 180px 160px',
-              padding: '12px 20px',
-              background: '#161c26',
-              borderBottom: '1px solid #1e2a3a',
-            }}>
-              {['Description', 'Action', 'Performed by', 'Time'].map(h => (
-                <span key={h} style={{ fontSize: 11, color: '#4a5568', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  {h}
-                </span>
-              ))}
-            </div>
+        {error && <div style={{ background:'rgba(255,77,109,0.08)', border:'1px solid rgba(255,77,109,0.25)', borderRadius:10, padding:'12px 16px', color:'#ff4d6d', fontSize:13, marginBottom:16 }}>⚠ {error}</div>}
 
-            {filtered.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '40px', color: '#8b9ab5' }}>
-                No logs found
-              </div>
-            ) : (
-              filtered.map((log, i) => (
-                <div key={log.id} style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 180px 180px 160px',
-                  padding: '14px 20px',
-                  borderBottom: i < filtered.length - 1 ? '1px solid #1a2030' : 'none',
-                  transition: 'background 0.15s',
-                }}
-                  onMouseEnter={e => (e.currentTarget.style.background = '#111825')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                >
-                  <span style={{ fontSize: 13, color: '#e8f0fe', paddingRight: 16 }}>
-                    {log.description}
-                  </span>
+        {/* Table */}
+        <div className="fu2" style={{ background:isDark?'#0d1117':t.card, border:`1px solid ${t.border}`, borderRadius:16, overflow:'hidden' }}>
+          {/* Header */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 200px 200px 170px', padding:'11px 20px', background:isDark?'#161c26':t.bg3, borderBottom:`1px solid ${t.border}` }}>
+            {['Description','Action','Performed by','Time (IST)'].map(h => (
+              <span key={h} style={{ fontSize:11, color:t.text3, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px' }}>{h}</span>
+            ))}
+          </div>
+
+          {loading ? (
+            <div style={{ display:'flex', justifyContent:'center', padding:'48px 0' }}>
+              <div style={{ width:32, height:32, border:`2px solid ${t.border}`, borderTopColor:t.accent, borderRadius:'50%', animation:'spin 0.8s linear infinite' }}/>
+            </div>
+          ) : !pageData||pageData.content.length===0 ? (
+            <div style={{ textAlign:'center', padding:'48px 0', color:t.text2, fontSize:14 }}>No logs found</div>
+          ) : (
+            pageData.content.map((log: any, i: number) => {
+              const ac = ACTION_COLORS[log.action] || t.text2;
+              return (
+                <div key={log.id} className="row-hover" style={{ display:'grid', gridTemplateColumns:'1fr 200px 200px 170px', padding:'13px 20px', borderBottom: i<pageData.content.length-1?`1px solid ${isDark?'#1a2030':t.border}`:'none', transition:'background 0.15s', animation:`fu 0.3s ${i*0.02}s ease both` }}>
+                  <span style={{ fontSize:13, color:t.text, paddingRight:16, lineHeight:1.5 }}>{log.description}</span>
                   <span>
-                    <span style={{
-                      fontSize: 11, fontWeight: 600,
-                      color: ACTION_COLOR[log.action] || '#8b9ab5',
-                      background: `${ACTION_COLOR[log.action] || '#8b9ab5'}12`,
-                      border: `1px solid ${ACTION_COLOR[log.action] || '#8b9ab5'}25`,
-                      borderRadius: 4, padding: '3px 8px',
-                      fontFamily: 'var(--mono)',
-                    }}>
+                    <span style={{ fontSize:11, fontWeight:600, color:ac, background:`${ac}12`, border:`1px solid ${ac}25`, borderRadius:4, padding:'3px 8px', fontFamily:"'JetBrains Mono',monospace", letterSpacing:'-0.2px' }}>
                       {log.action}
                     </span>
                   </span>
-                  <span style={{ fontSize: 12, color: '#8b9ab5' }}>
-                    {log.performedByEmail}
-                  </span>
-                  <span style={{ fontSize: 12, color: '#4a5568' }}>
-                    {formatDate(log.createdAt)}
-                  </span>
+                  <span style={{ fontSize:12, color:t.text2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{log.performedByEmail}</span>
+                  <span style={{ fontSize:12, color:t.text3 }}>{formatIST(log.createdAt)}</span>
                 </div>
-              ))
-            )}
-          </div>
-        )}
+              );
+            })
+          )}
+        </div>
 
-        <p style={{ color: '#4a5568', fontSize: 12, textAlign: 'right', marginTop: 10 }}>
-          {filtered.length} of {logs.length} entries
-        </p>
+        {pageData && <Pagination {...pageData} onPage={handlePage} loading={loading} />}
       </main>
     </div>
   );

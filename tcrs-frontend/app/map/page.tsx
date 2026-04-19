@@ -79,7 +79,7 @@ export default function MapPage() {
     const L = (await import('leaflet')).default;
     await import('leaflet/dist/leaflet.css');
 
-    if (!mapDivRef.current) return;
+    if (!mapDivRef.current || (mapDivRef.current as any)._leaflet_id) return;
 
     // Fix leaflet default icon path
     delete (L.Icon.Default.prototype as any)._getIconUrl;

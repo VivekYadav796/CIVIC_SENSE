@@ -111,7 +111,7 @@ export default function RegisterPage() {
   };
 
   const EyeBtn = ({ show, toggle }: { show: boolean; toggle: () => void }) => (
-    <button type="button" onClick={toggle} style={{
+    <button type="button" onClick={toggle} suppressHydrationWarning style={{
       position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
       background: 'none', border: 'none', cursor: 'pointer', color: '#4a5568',
       display: 'flex', padding: 4, borderRadius: 6, transition: 'color 0.15s',
@@ -422,7 +422,7 @@ export default function RegisterPage() {
 
         {/* Google */}
         <div className="f1">
-          <button className="gbtn" onClick={handleGoogle} disabled={gLoading} style={{ marginBottom: 20 }}>
+          <button className="gbtn" onClick={handleGoogle} disabled={gLoading} suppressHydrationWarning style={{ marginBottom: 20 }}>
             {gLoading
               ? <div style={{ width: 18, height: 18, border: '2px solid #333', borderTopColor: '#00e5a0', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
               : <svg width="18" height="18" viewBox="0 0 48 48">
@@ -450,6 +450,7 @@ export default function RegisterPage() {
             <Label text="Full name" />
             <input className="inp" type="text" placeholder="Vivek Yadav"
               value={form.name}
+              suppressHydrationWarning
               onChange={e => setForm({ ...form, name: e.target.value })}
               onBlur={() => setTouched({ ...touched, name: true })}
               style={{ borderColor: bc('name', nameErr) }}
@@ -463,6 +464,7 @@ export default function RegisterPage() {
             <Label text="Email address" />
             <input className="inp" type="email" placeholder="you@example.com"
               value={form.email}
+              suppressHydrationWarning
               onChange={e => setForm({ ...form, email: e.target.value })}
               onBlur={() => setTouched({ ...touched, email: true })}
               style={{ borderColor: bc('email', emailErr) }}
@@ -477,6 +479,7 @@ export default function RegisterPage() {
             <div style={{ position: 'relative' }}>
               <input className="inp" type={showPass ? 'text' : 'password'} placeholder="Min. 6 characters"
                 value={form.password}
+                suppressHydrationWarning
                 onChange={e => setForm({ ...form, password: e.target.value })}
                 onBlur={() => setTouched({ ...touched, password: true })}
                 style={{ paddingRight: 44, borderColor: bc('password', passwordErr) }}
@@ -516,6 +519,7 @@ export default function RegisterPage() {
             <div style={{ position: 'relative' }}>
               <input className="inp" type={showConfirm ? 'text' : 'password'} placeholder="Repeat your password"
                 value={form.confirm}
+                suppressHydrationWarning
                 onChange={e => setForm({ ...form, confirm: e.target.value })}
                 onBlur={() => setTouched({ ...touched, confirm: true })}
                 style={{ paddingRight: 44, borderColor: bc('confirm', confirmErr) }}
@@ -546,6 +550,7 @@ export default function RegisterPage() {
             <input
               type="checkbox"
               checked={agreed}
+              suppressHydrationWarning
               onChange={e => setAgreed(e.target.checked)}
               style={{ width: 16, height: 16, marginTop: 2, flexShrink: 0, cursor: 'pointer' }}
             />
@@ -561,6 +566,7 @@ export default function RegisterPage() {
           <button
             className="sbtn f4"
             type="submit"
+            suppressHydrationWarning
             disabled={loading || !agreed}
             style={{
               background: (loading || !agreed) ? '#1e2a3a' : 'linear-gradient(135deg,#00e5a0,#00d4ff)',

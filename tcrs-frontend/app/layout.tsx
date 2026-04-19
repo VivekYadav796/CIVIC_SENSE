@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import Providers from '@/components/Providers';
+import { ThemeProvider } from '@/lib/ThemeContext';
+
 
 export const metadata: Metadata = {
   title: 'TCRS — Transparent Civic Reporting System',
@@ -11,7 +13,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
-        <Providers>{children}</Providers>
+        <Providers>
+          <ThemeProvider>
+            {children}
+          </ThemeProvider>
+          </Providers>
       </body>
     </html>
   );
