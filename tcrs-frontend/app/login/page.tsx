@@ -1,7 +1,7 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import API from '@/lib/api';
 import { saveAuth, isLoggedIn } from '@/lib/auth';
@@ -11,7 +11,9 @@ const GOOGLE_ENABLED = !!(
   process.env.NEXT_PUBLIC_GOOGLE_ENABLED === 'true'
 );
 
-export default function LoginPage() {
+// Separated into its own component so useSearchParams() is
+// inside a <Suspense> boundary (required by Next.js 14+)
+function LoginContent() {
   const router = useRouter();
   const params = useSearchParams();
 
@@ -616,5 +618,15 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Default export wraps LoginContent in Suspense so Next.js can
+// statically render this page without crashing on useSearchParams()
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginContent />
+    </Suspense>
   );
 }
