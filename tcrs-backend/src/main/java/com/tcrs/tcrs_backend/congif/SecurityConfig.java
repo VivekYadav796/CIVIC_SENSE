@@ -28,8 +28,10 @@ import java.util.List;
 @EnableMethodSecurity
 public class SecurityConfig {
 
-    @Autowired private JwtFilter jwtFilter;
-    @Autowired private UserDetailsServiceImpl userDetailsService;
+    @Autowired
+    private JwtFilter jwtFilter;
+    @Autowired
+    private UserDetailsServiceImpl userDetailsService;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -52,8 +54,10 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of("http://localhost:3000"));
-        config.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
+        config.setAllowedOrigins(List.of(
+                "http://localhost:3000",
+                "https://civicsense-nu.vercel.app"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
 
@@ -65,32 +69,31 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-            .csrf(AbstractHttpConfigurer::disable)
-            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-            .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .authenticationProvider(authenticationProvider())
-            .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
-            .authorizeHttpRequests(auth -> auth
-                // Public routes
-                .requestMatchers(
-                    "/api/auth/**",
-                    "/api/health",
-                    "/api/complaints/nearby",
-                    "/api/complaints/map"
-                ).permitAll()
+                .csrf(AbstractHttpConfigurer::disable)
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authenticationProvider(authenticationProvider())
+                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
+                .authorizeHttpRequests(auth -> auth
+                        // Public routes
+                        .requestMatchers(
+                                "/api/auth/**",
+                                "/api/health",
+                                "/api/complaints/nearby",
+                                "/api/complaints/map")
+                        .permitAll()
 
-                // Admin only
-                .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        // Admin only
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
 
-                // Auditor + Admin
-                .requestMatchers("/api/audit/**").hasAnyRole("ADMIN","AUDITOR")
+                        // Auditor + Admin
+                        .requestMatchers("/api/audit/**").hasAnyRole("ADMIN", "AUDITOR")
 
-                // Official only
-                .requestMatchers("/api/complaints/assigned").hasRole("OFFICIAL")
+                        // Official only
+                        .requestMatchers("/api/complaints/assigned").hasRole("OFFICIAL")
 
-                // All authenticated users
-                .anyRequest().authenticated()
-            );
+                        // All authenticated users
+                        .anyRequest().authenticated());
 
         return http.build();
     }
