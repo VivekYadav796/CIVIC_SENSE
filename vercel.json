@@ -1,0 +1,7 @@
+{
+  "buildCommand": "cd tcrs-frontend && npm install && npm run build",
+  "outputDirectory": "tcrs-frontend/.next",
+  "installCommand": "cd tcrs-frontend && npm install",
+  "framework": "nextjs",
+  "rootDirectory": "tcrs-frontend"
+}
