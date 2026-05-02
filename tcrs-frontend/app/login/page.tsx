@@ -48,8 +48,14 @@ function LoginContent() {
       saveAuth(res.data.token, res.data.role, res.data.name, res.data.email);
       router.replace('/dashboard');
     } catch (err: any) {
-      const msg = err.response?.data;
-      setError(typeof msg === 'string' ? msg : 'Login failed. Check your credentials.');
+      if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+        setError('Server is waking up (Render free tier). Please wait 20–30 seconds and try again.');
+      } else if (!err.response) {
+        setError('Cannot reach server. Check your connection or try again in a moment.');
+      } else {
+        const msg = err.response?.data;
+        setError(typeof msg === 'string' ? msg : 'Login failed. Check your credentials.');
+      }
     } finally { setLoading(false); }
   };
 

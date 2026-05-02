@@ -1,10 +1,13 @@
 import axios from 'axios';
 
 const API = axios.create({
-baseURL: process.env.NEXT_PUBLIC_API_URL || 
-           (process.env.NODE_ENV === 'production' 
-             ? 'https://civic-sense-lwzb.onrender.com/api'  // Your actual Render URL
-             : 'http://localhost:8080/api'),});
+  baseURL: process.env.NEXT_PUBLIC_API_URL ||
+    (process.env.NODE_ENV === 'production'
+      ? 'https://civic-sense-lwzb.onrender.com/api'
+      : 'http://localhost:8080/api'),
+  // 30s timeout — Render free tier cold-starts can take ~15-20s
+  timeout: 30000,
+});
 
 API.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
@@ -19,14 +22,22 @@ API.interceptors.request.use((config) => {
 API.interceptors.response.use(
   res => res,
   err => {
-    if ((err.response?.status === 401 || err.response?.status === 403 || err.response?.status === 500) && typeof window !== 'undefined') {
-      // Sometimes malformed tokens (like "undefined") cause a 500 from the backend JWT parser instead of 401
-      // If we see 500 and the user isn't able to fetch core data, we should probably clear out invalid tokens 
-      // by forcing a re-login. 
-      if (err.response?.status === 500 && !localStorage.getItem('token') || localStorage.getItem('token') === 'undefined') {
+    if (typeof window !== 'undefined') {
+      const status = err.response?.status;
+      const token = localStorage.getItem('token');
+      const isOnLoginPage = window.location.pathname === '/login' ||
+                            window.location.pathname === '/register' ||
+                            window.location.pathname === '/forgot-password';
+
+      // Only auto-redirect for 401/403 when NOT on auth pages, and token is corrupt
+      if ((status === 401 || status === 403) && !isOnLoginPage) {
         localStorage.clear();
         window.location.href = '/login';
-      } else if (err.response?.status === 401 || err.response?.status === 403) {
+      }
+
+      // If token is literally the string 'undefined', clear it — but don't
+      // redirect if the user is actively trying to log in
+      if (token === 'undefined' && !isOnLoginPage) {
         localStorage.clear();
         window.location.href = '/login';
       }
