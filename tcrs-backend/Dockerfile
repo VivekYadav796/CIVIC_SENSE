@@ -7,4 +7,4 @@ COPY . .
 RUN chmod +x mvnw
 RUN ./mvnw clean package -DskipTests
 
-CMD ["sh", "-c", "java -jar target/*.jar"]
+CMD ["sh", "-c", "java -Dspring.data.mongodb.uri=${SPRING_DATA_MONGODB_URI} -Dserver.port=${PORT} -jar target/*.jar"]
