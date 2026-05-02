@@ -1,8 +1,10 @@
 import axios from 'axios';
 
 const API = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api',
-});
+baseURL: process.env.NEXT_PUBLIC_API_URL || 
+           (process.env.NODE_ENV === 'production' 
+             ? 'https://civic-sense-lwzb.onrender.com/api'  // Your actual Render URL
+             : 'http://localhost:8080/api'),});
 
 API.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
